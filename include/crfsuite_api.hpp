@@ -325,6 +325,7 @@ public:
      *  @throw  std::runtime_error      An internal error in the model.
      */
     bool open(const std::string& name);
+    bool open(const std::string& name, bool verbose);
 
     /**
      * Close the model.

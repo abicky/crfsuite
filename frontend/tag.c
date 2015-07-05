@@ -56,6 +56,7 @@ typedef struct {
     int quiet;
     int reference;
     int help;
+    int verbose;
 
     int num_params;
     char **params;
@@ -119,6 +120,9 @@ BEGIN_OPTION_MAP(parse_tagger_options, tagger_option_t)
     ON_OPTION(SHORTOPT('q') || LONGOPT("quiet"))
         opt->quiet = 1;
 
+    ON_OPTION(SHORTOPT('v') || LONGOPT("verbose"))
+        opt->verbose = 1;
+
     ON_OPTION(SHORTOPT('h') || LONGOPT("help"))
         opt->help = 1;
 
@@ -143,6 +147,7 @@ static void show_usage(FILE *fp, const char *argv0, const char *command)
     fprintf(fp, "    -p, --probability   Output the probability of the label sequences\n");
     fprintf(fp, "    -i, --marginal      Output the marginal probabilities of items\n");
     fprintf(fp, "    -q, --quiet         Suppress tagging results (useful for test mode)\n");
+    fprintf(fp, "    -v, --verbose       Output parameter information used in the inference\n");
     fprintf(fp, "    -h, --help          Show the usage of this command and exit\n");
 }
 
@@ -423,7 +428,7 @@ int main_tag(int argc, char *argv[], const char *argv0)
     /* Read the model. */
     if (opt.model != NULL) {
         /* Create a model instance corresponding to the model file. */
-        if (ret = crfsuite_create_instance_from_file(opt.model, (void**)&model)) {
+        if (ret = crfsuite_create_instance_from_file(opt.model, (void**)&model, opt.verbose)) {
             goto force_exit;
         }
 

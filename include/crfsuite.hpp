@@ -263,13 +263,18 @@ Tagger::~Tagger()
 
 bool Tagger::open(const std::string& name)
 {
+    return open(name, false);
+}
+
+bool Tagger::open(const std::string& name, bool verbose)
+{
     int ret;
 
     // Close the model if it is already opened.
     this->close();
 
     // Open the model file.
-    if ((ret = crfsuite_create_instance_from_file(name.c_str(), (void**)&model))) {
+    if ((ret = crfsuite_create_instance_from_file(name.c_str(), (void**)&model, (int)verbose))) {
         return false;
     }
 

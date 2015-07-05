@@ -57,6 +57,7 @@ typedef struct {
     int num_labels;         /**< Number of distinct output labels (L). */
     int num_attributes;     /**< Number of distinct attributes (A). */
     int level;
+    int verbose;
 } crf1dt_t;
 
 static void crf1dt_state_score(crf1dt_t *crf1dt, const crfsuite_instance_t *inst)
@@ -70,11 +71,21 @@ static void crf1dt_state_score(crf1dt_t *crf1dt, const crfsuite_instance_t *inst
     const crfsuite_item_t* item = NULL;
     const int T = inst->num_items;
     const int L = crf1dt->num_labels;
+    int *feature_nums, **state_indices;
+    char ***feature_strs;
 
     /* Loop over the items in the sequence. */
+    if (crf1dt->verbose) {
+        printf("STATES = {\n");
+    }
     for (t = 0;t < T;++t) {
         item = &inst->items[t];
         state = STATE_SCORE(ctx, t);
+        if (crf1dt->verbose) {
+            feature_nums = (int *)calloc(item->num_contents, sizeof(int));
+            feature_strs = (char ***)calloc(item->num_contents, sizeof(char **));
+            state_indices = (int **)calloc(item->num_contents, sizeof(int *));
+        }
 
         /* Loop over the contents (attributes) attached to the item. */
         for (i = 0;i < item->num_contents;++i) {
@@ -85,6 +96,12 @@ static void crf1dt_state_score(crf1dt_t *crf1dt, const crfsuite_instance_t *inst
             value = item->contents[i].value;
 
             /* Loop over the state features associated with the attribute. */
+            const char* attr_str = crf1dm_to_attr(model, a);
+            if (crf1dt->verbose) {
+                feature_nums[i] = attr.num_features;
+                feature_strs[i] = (char **)calloc(attr.num_features, sizeof(char *));
+                state_indices[i] = (int *)calloc(attr.num_features, sizeof(int));
+            }
             for (r = 0;r < attr.num_features;++r) {
                 /* The state feature #(attr->fids[r]), which is represented by
                    the attribute #a, outputs the label #(f->dst). */
@@ -92,8 +109,35 @@ static void crf1dt_state_score(crf1dt_t *crf1dt, const crfsuite_instance_t *inst
                 crf1dm_get_feature(model, fid, &f);
                 l = f.dst;
                 state[l] += f.weight * value;
+                if (crf1dt->verbose) {
+                    asprintf(&feature_strs[i][r], "%s --> %s: %f", attr_str, crf1dm_to_label(model, f.dst), f.weight * value);
+                    state_indices[i][r] = l;
+                }
             }
         }
+        if (crf1dt->verbose) {
+            for (l =0;l < L;++l) {
+                printf("    tag[%d] --> %s: %f\n", t, crf1dm_to_label(model, l), state[l]);
+                for (i =0;i < item->num_contents;++i) {
+                    for (r = 0;r < feature_nums[i];++r) {
+                        if (state_indices[i][r] == l) {
+                            printf("        %s\n", feature_strs[i][r]);
+                            free(feature_strs[i][r]);
+                        }
+                    }
+                }
+            }
+            for (i =0;i < item->num_contents;++i) {
+                free(feature_strs[i]);
+                free(state_indices[i]);
+            }
+            free(feature_nums);
+            free(feature_strs);
+            free(state_indices);
+        }
+    }
+    if (crf1dt->verbose) {
+        printf("}\n\n");
     }
 }
 
@@ -107,6 +151,9 @@ static void crf1dt_transition_score(crf1dt_t* crf1dt)
     crf1d_context_t* ctx = crf1dt->ctx;
     const int L = crf1dt->num_labels;
 
+    if (crf1dt->verbose) {
+        printf("TRANSITIONS = {\n");
+    }
     /* Compute transition scores between two labels. */
     for (i = 0;i < L;++i) {
         trans = TRANS_SCORE(ctx, i);
@@ -116,7 +163,13 @@ static void crf1dt_transition_score(crf1dt_t* crf1dt)
             fid = crf1dm_get_featureid(&edge, r);
             crf1dm_get_feature(model, fid, &f);
             trans[f.dst] = f.weight;
+            if (crf1dt->verbose) {
+                printf("  %s --> %s: %f\n", crf1dm_to_label(model, f.src), crf1dm_to_label(model, f.dst), f.weight);
+            }
         }        
+    }
+    if (crf1dt->verbose) {
+        printf("}\n\n");
     }
 }
 
@@ -144,7 +197,7 @@ static void crf1dt_delete(crf1dt_t* crf1dt)
     free(crf1dt);
 }
 
-static crf1dt_t *crf1dt_new(crf1dm_t* crf1dm)
+static crf1dt_t *crf1dt_new(crf1dm_t* crf1dm, int verbose)
 {
     crf1dt_t* crf1dt = NULL;
 
@@ -154,6 +207,7 @@ static crf1dt_t *crf1dt_new(crf1dm_t* crf1dm)
         crf1dt->num_attributes = crf1dm_get_num_attrs(crf1dm);
         crf1dt->model = crf1dm;
         crf1dt->ctx = crf1dc_new(CTXF_VITERBI | CTXF_MARGINALS, crf1dt->num_labels, 0);
+        crf1dt->verbose = verbose;
         if (crf1dt->ctx != NULL) {
             crf1dc_reset(crf1dt->ctx, RF_TRANS);
             crf1dt_transition_score(crf1dt);
@@ -422,7 +476,7 @@ static int model_dump(crfsuite_model_t* model, FILE *fpo)
     return 0;
 }
 
-static int crf1m_model_create(const char *filename, crfsuite_model_t** ptr_model)
+static int crf1m_model_create(const char *filename, crfsuite_model_t** ptr_model, int verbose)
 {
     int ret = 0;
     crf1dm_t *crf1dm = NULL;
@@ -442,7 +496,7 @@ static int crf1m_model_create(const char *filename, crfsuite_model_t** ptr_model
     }
 
     /* Construct a tagger based on the model. */
-    crf1dt = crf1dt_new(crf1dm);
+    crf1dt = crf1dt_new(crf1dm, verbose);
     if (crf1dt == NULL) {
         ret = CRFSUITEERR_OUTOFMEMORY;
         goto error_exit;
@@ -544,7 +598,7 @@ error_exit:
     return ret;
 }
 
-int crf1m_create_instance_from_file(const char *filename, void **ptr)
+int crf1m_create_instance_from_file(const char *filename, void **ptr, verbose)
 {
-    return crf1m_model_create(filename, (crfsuite_model_t**)ptr);
+    return crf1m_model_create(filename, (crfsuite_model_t**)ptr, verbose);
 }

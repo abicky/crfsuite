@@ -744,7 +744,7 @@ int crfsuite_create_instance(const char *iid, void **ptr);
  *  @return int         \c 0 if this function creates an object successfully,
  *                      \c 1 otherwise.
  */
-int crfsuite_create_instance_from_file(const char *filename, void **ptr);
+int crfsuite_create_instance_from_file(const char *filename, void **ptr, int verbose);
 
 /**
  * Create instances of tagging object from a model file.
