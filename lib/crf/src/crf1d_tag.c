@@ -72,9 +72,19 @@ static void crf1dt_state_score(crf1dt_t *crf1dt, const crfsuite_instance_t *inst
     const int L = crf1dt->num_labels;
 
     /* Loop over the items in the sequence. */
+#ifdef DEBUG
+    printf("STATES = {\n");
+    int *feature_nums, **state_indices;
+    char ***feature_strs;
+#endif
     for (t = 0;t < T;++t) {
         item = &inst->items[t];
         state = STATE_SCORE(ctx, t);
+#ifdef DEBUG
+        feature_nums = (int *)calloc(item->num_contents, sizeof(int));
+        feature_strs = (char ***)calloc(item->num_contents, sizeof(char **));
+        state_indices = (int **)calloc(item->num_contents, sizeof(int *));
+#endif
 
         /* Loop over the contents (attributes) attached to the item. */
         for (i = 0;i < item->num_contents;++i) {
@@ -85,6 +95,12 @@ static void crf1dt_state_score(crf1dt_t *crf1dt, const crfsuite_instance_t *inst
             value = item->contents[i].value;
 
             /* Loop over the state features associated with the attribute. */
+#ifdef DEBUG
+            const char* attr_str = crf1dm_to_attr(model, a);
+            feature_nums[i] = attr.num_features;
+            feature_strs[i] = (char **)calloc(attr.num_features, sizeof(char *));
+            state_indices[i] = (int *)calloc(attr.num_features, sizeof(int));
+#endif
             for (r = 0;r < attr.num_features;++r) {
                 /* The state feature #(attr->fids[r]), which is represented by
                    the attribute #a, outputs the label #(f->dst). */
@@ -92,9 +108,36 @@ static void crf1dt_state_score(crf1dt_t *crf1dt, const crfsuite_instance_t *inst
                 crf1dm_get_feature(model, fid, &f);
                 l = f.dst;
                 state[l] += f.weight * value;
+#ifdef DEBUG
+                asprintf(&feature_strs[i][r], "%s --> %s: %f", attr_str, crf1dm_to_label(model, f.dst), f.weight * value);
+                state_indices[i][r] = l;
+#endif
             }
         }
+#ifdef DEBUG
+        for (l =0;l < L;++l) {
+            printf("    y[%d] --> %s: %f\n", t, crf1dm_to_label(model, l), state[l]);
+            for (i =0;i < item->num_contents;++i) {
+                for (r = 0;r < feature_nums[i];++r) {
+                    if (state_indices[i][r] == l) {
+                        printf("        %s\n", feature_strs[i][r]);
+                        free(feature_strs[i][r]);
+                    }
+                }
+            }
+        }
+        for (i =0;i < item->num_contents;++i) {
+            free(feature_strs[i]);
+            free(state_indices[i]);
+        }
+        free(feature_nums);
+        free(feature_strs);
+        free(state_indices);
+#endif
     }
+#ifdef DEBUG
+    printf("}\n\n");
+#endif
 }
 
 static void crf1dt_transition_score(crf1dt_t* crf1dt)
@@ -107,6 +150,9 @@ static void crf1dt_transition_score(crf1dt_t* crf1dt)
     crf1d_context_t* ctx = crf1dt->ctx;
     const int L = crf1dt->num_labels;
 
+#ifdef DEBUG
+    printf("TRANSITIONS = {\n");
+#endif
     /* Compute transition scores between two labels. */
     for (i = 0;i < L;++i) {
         trans = TRANS_SCORE(ctx, i);
@@ -116,8 +162,14 @@ static void crf1dt_transition_score(crf1dt_t* crf1dt)
             fid = crf1dm_get_featureid(&edge, r);
             crf1dm_get_feature(model, fid, &f);
             trans[f.dst] = f.weight;
+#ifdef DEBUG
+            printf("  %s --> %s: %f\n", crf1dm_to_label(model, f.src), crf1dm_to_label(model, f.dst), f.weight);
+#endif
         }        
     }
+#ifdef DEBUG
+    printf("}\n\n");
+#endif
 }
 
 static void crf1dt_set_level(crf1dt_t *crf1dt, int level)
